@@ -1,5 +1,5 @@
 import {initializeApp,deleteApp} from 'firebase/app';
-import {getAuth,onAuthStateChanged,GoogleAuthProvider,signInWithPopup,signInWithEmailAndPassword,createUserWithEmailAndPassword,signInAnonymously,signOut,setPersistence,inMemoryPersistence,deleteUser,sendPasswordResetEmail} from 'firebase/auth';
+import {getAuth,onAuthStateChanged,GoogleAuthProvider,signInWithRedirect,getRedirectResult,signInWithEmailAndPassword,createUserWithEmailAndPassword,signInAnonymously,signOut,setPersistence,inMemoryPersistence,deleteUser,sendPasswordResetEmail} from 'firebase/auth';
 import {getFirestore,doc,collection,getDoc,getDocs,onSnapshot,query,where,runTransaction,writeBatch,serverTimestamp,Timestamp} from 'firebase/firestore';
 import {firebaseConfig} from './firebase-config.js';
 import {freshState,phoneDigits,validateBuyer,secureIndex} from './core.js';
@@ -14,6 +14,12 @@ function merged(){data.tickets=Object.fromEntries(Object.entries(publicTickets).
 function watchError(e){data.error=message(e);notify();}
 function watchPrivate(q,cb){privateUnsubs.push(onSnapshot(q,cb,watchError));}
 export function start(cb,linkId){notify=cb;
+ getRedirectResult(auth).then(async result=>{if(result&&result.user.email!==ADMIN_EMAIL){await signOut(auth);throw Error('La administración está reservada para '+ADMIN_EMAIL+'.');}}).catch(watchError);
+ if(location.hostname===firebaseConfig.authDomain&&new URL(location.href).searchParams.get('login')==='google'){
+  const url=new URL(location.href);url.searchParams.delete('login');history.replaceState(null,'',url);
+  auth.authStateReady().then(()=>{if(auth.currentUser?.email!==ADMIN_EMAIL)return loginGoogle();}).catch(watchError);
+ }
+
  onSnapshot(raffleRef,snap=>{data.loaded=true;if(snap.exists()){const r=snap.data();data.settings={...r,drawAt:r.drawAt.toDate().toISOString()};data.phase=r.phase;data.winner=r.winner?{...r.winner,drawnAt:r.winner.drawnAt.toDate().toISOString(),eligible:Array(r.winner.participants).fill(0)}:null;}else {data.settings=null;data.winner=null;data.phase="open";}notify();},watchError);
  onSnapshot(collection(db,'tickets'),snap=>{publicTickets=Object.fromEntries(snap.docs.map(d=>[d.id,d.data()]));merged();},watchError);
  if(linkId)onSnapshot(ref('sellerLinks',linkId),snap=>{data.link=snap.exists()?{id:snap.id,...snap.data()}:null;notify();},watchError);
@@ -28,7 +34,13 @@ export function start(cb,linkId){notify=cb;
  });
 }
 export function message(e){return ({'auth/popup-closed-by-user':'Se cerró el inicio de sesión. Puedes intentarlo nuevamente.','auth/unauthorized-domain':'Este dominio debe habilitarse en Firebase Authentication.','auth/invalid-credential':'Revisa el correo y la contraseña.','auth/email-already-in-use':'Ese correo ya tiene una cuenta. Usa la opción de vincular una cuenta existente.','auth/weak-password':'La contraseña inicial debe tener al menos 6 caracteres.','auth/too-many-requests':'Se realizaron demasiados intentos. Espera unos minutos.','permission-denied':'No tienes permiso para esta operación o la rifa ya cerró. Actualiza y comprueba tu sesión.','unavailable':'No hay conexión con la base de datos. Inténtalo cuando vuelva la conexión.'})[e.code]||e.message||'No fue posible completar la operación.';}
-export async function loginGoogle(){const p=new GoogleAuthProvider();p.setCustomParameters({login_hint:ADMIN_EMAIL,prompt:'select_account'});const result=await signInWithPopup(auth,p);if(result.user.email!==ADMIN_EMAIL){await signOut(auth);throw Error('La administración está reservada para '+ADMIN_EMAIL+'.');}}
+export async function loginGoogle(){
+ data.error='';
+ if(location.hostname!==firebaseConfig.authDomain){location.assign('https://'+firebaseConfig.authDomain+'/?login=google#administracion');return;}
+ const p=new GoogleAuthProvider();p.setCustomParameters({login_hint:ADMIN_EMAIL,prompt:'select_account'});
+ try{await signInWithRedirect(auth,p);}catch(e){data.error=message(e)+(e.code?' ('+e.code+')':'');notify();throw e;}
+}
+
 export const loginSeller=(email,password)=>signInWithEmailAndPassword(auth,email.trim(),password);
 export const logout=()=>signOut(auth);
 export const resetPassword=email=>sendPasswordResetEmail(auth,email.trim());

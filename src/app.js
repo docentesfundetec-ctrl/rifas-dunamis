@@ -10,7 +10,7 @@ const num=n=>String(n).padStart(String((state.settings?.total||100)-1).length,'0
 const seller=()=>session.role==='seller'?session.profile:null;
 const closed=()=>state.phase!=='open'||!state.settings||isClosed(state);
 const privileged=()=>session.role==='admin'||session.role==='seller';
-function sellerURL(id){const url=new URL(location.href);url.search='';url.searchParams.set('v',id);url.hash='tablero';return url.href;}
+function sellerURL(id){const url=new URL('https://docentesfundetec-ctrl.github.io/rifas-dunamis/');url.search='';url.searchParams.set('v',id);url.hash='tablero';return url.href;}
 function toast(message){$('#toast').textContent=message;$('#toast').hidden=false;clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').hidden=true,5000);}
 function modal(title,body){$('#modal-content').innerHTML=`<div class="modal-head"><h2>${title}</h2><button type="button" class="close-button" data-close aria-label="Cerrar">×</button></div><div class="modal-body">${body}</div>`;if(!$('#modal').open)$('#modal').showModal();}
 function errorIn(form,e){let p=form.querySelector('[data-error]');if(!p){p=document.createElement('p');p.className='error';p.dataset.error='';p.setAttribute('role','alert');form.prepend(p);}p.textContent=cloud.message(e);p.scrollIntoView({block:'nearest'});}

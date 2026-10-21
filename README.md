@@ -45,3 +45,8 @@ Fuentes: [Transacciones](https://firebase.google.com/docs/firestore/manage-data/
 El botón «Crear rifa de prueba» crea 100 números, valor ilustrativo de $1.000 COP y fecha a 15 días. La franja pública indica que no se reciben pagos. Incluye un enlace de vendedor ficticio sin cuenta de acceso. Solo deben usarse datos inventados.
 
 «Limpiar prueba» bloquea nuevas reservas, elimina los registros de la demostración y permite configurar la primera rifa real. Esta opción está protegida en las reglas y no funciona sobre una rifa real. Los vendedores reales se conservan.
+
+## Acceso de Google
+La portada pública y los enlaces de vendedores permanecen en GitHub Pages. El botón de Google lleva al administrador a `https://rifas-dunamis.firebaseapp.com`, donde se usa redirección de página completa y se recupera el resultado al volver. Se evita depender de ventanas emergentes y de almacenamiento entre dominios. El equipo también puede abrir directamente `https://rifas-dunamis.firebaseapp.com/#administracion`.
+
+Desplegar ambas copias tras cambios: `npm run build`, subir `docs/` a GitHub y ejecutar `npx firebase deploy --only hosting,firestore:rules --project rifas-dunamis`.
