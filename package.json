@@ -1,0 +1,21 @@
+{
+  "name": "rifas-dunamis",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test tests/*.test.js",
+    "dev": "node server.js",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-rifas \"node --test security-tests/*.test.js\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "firebase-tools": "^15.34.0",
+    "tailwindcss": "3.4.17"
+  },
+  "dependencies": {
+    "esbuild": "^0.28.2",
+    "firebase": "^13.1.0"
+  }
+}

@@ -1,0 +1,1 @@
+module.exports = {content:['./dist/index.html','./src/*.js'],theme:{extend:{colors:{dunamis:'#07379b',ink:'#132443',mist:'#f4f6fa',gold:'#ffbf00'},fontFamily:{sans:['Inter','Segoe UI','sans-serif']}}},plugins:[]};

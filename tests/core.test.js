@@ -1,0 +1,12 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {freshState,updateTicket,stats,draw,validateSettings,secureIndex} from '../src/core.js';
+const now=1800000000000;
+function setup(){const s=freshState(now);s.sellers=[{id:'a',name:'Ana'},{id:'b',name:'Luis'}];return s;}
+const sale={number:7,sellerId:'a',status:'paid',name:'Comprador de prueba',phone:'3001234567'};
+test('No se paga sin comprador y celular; no se ocupa un número ajeno',()=>{const s=setup();assert.throws(()=>updateTicket(s,{...sale,name:''},now));assert.throws(()=>updateTicket(s,{...sale,phone:'12'},now));updateTicket(s,sale,now);assert.throws(()=>updateTicket(s,{...sale,sellerId:'b'},now));assert.equal(s.tickets[7].sellerId,'a');});
+test('Reservar, pagar y liberar actualiza estadísticas sin duplicar compradores',()=>{const s=setup();updateTicket(s,{...sale,status:'reserved',name:'',phone:''},now);assert.equal(stats(s).reserved,1);updateTicket(s,sale,now);updateTicket(s,{...sale,number:8,phone:'+57 300 123 4567'},now);updateTicket(s,{...sale,number:9},now);assert.equal(stats(s).paid,3);assert.equal(stats(s).buyers,2);assert.equal(stats(s).revenue,30000);updateTicket(s,{...sale,number:9,status:'free'},now);assert.equal(stats(s).paid,2);});
+test('El sorteo respeta fecha, solo pagados y resultado único',()=>{const s=setup();updateTicket(s,sale,now);updateTicket(s,{...sale,number:8,status:'reserved'},now);assert.throws(()=>draw(s,now));const after=Date.parse(s.settings.drawAt);assert.throws(()=>updateTicket(s,{...sale,number:9},after));draw(s,after);assert.equal(s.winner.number,7);assert.deepEqual(s.winner.eligible,[7]);assert.throws(()=>draw(s,after));assert.throws(()=>validateSettings(s,{...s.settings,drawAt:new Date(after+1000).toISOString()},after));});
+test('Sin pagos no hay ganador y la configuración conserva números asignados y precio',()=>{const s=setup();assert.throws(()=>draw(s,Date.parse(s.settings.drawAt)));updateTicket(s,{...sale,number:99},now);assert.throws(()=>validateSettings(s,{...s.settings,total:50},now));assert.throws(()=>validateSettings(s,{...s.settings,price:20000},now));assert.throws(()=>validateSettings(s,{...s.settings,drawAt:'invalid'},now));});
+test('Muestreo aleatorio rechaza el intervalo que introduce sesgo',()=>{const samples=[4294967295,5];const cryptoSource={getRandomValues:buf=>{buf[0]=samples.shift();return buf;}};assert.equal(secureIndex(10,cryptoSource),5);assert.equal(samples.length,0);});
+

@@ -1,0 +1,1 @@
+export const firebaseConfig = {apiKey:'AIzaSyDomiiL3E54y7BlgK7-GF6sxczCbY44u3o',authDomain:'rifas-dunamis.firebaseapp.com',projectId:'rifas-dunamis',storageBucket:'rifas-dunamis.firebasestorage.app',messagingSenderId:'665155393460',appId:'1:665155393460:web:0ffdeb7ad796ff8d8384e1'};

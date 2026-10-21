@@ -1,0 +1,114 @@
+rules_version = '2';
+service cloud.firestore {
+ match /databases/{database}/documents {
+  function admin() {
+   return request.auth != null && request.auth.token.email == 'docentesfundetec@gmail.com'
+    && request.auth.token.email_verified == true
+    && request.auth.token.firebase.sign_in_provider == 'google.com';
+  }
+  function seller(id) {
+   return request.auth != null && request.auth.uid == id
+    && get(/databases/$(database)/documents/sellers/$(id)).data.active == true;
+  }
+  function activeSeller(id) { return get(/databases/$(database)/documents/sellers/$(id)).data.active == true; }
+  function open() {
+   let r = get(/databases/$(database)/documents/raffles/current).data;
+   return r.phase == 'open' && request.time < r.drawAt;
+  }
+  function validNumber(n) {
+   let r = get(/databases/$(database)/documents/raffles/current).data;
+   return n is int && n >= 0 && n < r.total;
+  }
+  function validTicket(d) {
+   return d.keys().hasOnly(['number','status','sellerId','updatedAt'])
+    && validNumber(d.number) && d.status in ['reserved','paid']
+    && d.sellerId is string && d.updatedAt == request.time;
+  }
+  function validSale(d) {
+   return d.keys().hasOnly(['number','status','sellerId','buyerUid','name','phone','createdAt','updatedAt'])
+    && validNumber(d.number) && d.status in ['reserved','paid']
+    && d.name is string && d.name.size() >= 3 && d.name.size() <= 80
+    && d.phone is string && d.phone.matches('^[0-9]{7,15}$')
+    && d.sellerId is string && d.buyerUid is string && d.updatedAt == request.time;
+  }
+  function pairMatches(id,d) {
+   let t = getAfter(/databases/$(database)/documents/tickets/$(id)).data;
+   return t.number == d.number && t.status == d.status && t.sellerId == d.sellerId;
+  }
+  function saleMatches(id,d) {
+   let s = getAfter(/databases/$(database)/documents/sales/$(id)).data;
+   return s.number == d.number && s.status == d.status && s.sellerId == d.sellerId;
+  }
+  function validRaffle(d) {
+   return d.keys().hasOnly(['title','prize','description','image','price','total','drawAt','automatic','phase','winner','updatedAt'])
+    && d.title is string && d.title.size() >= 3 && d.title.size() <= 85
+    && d.prize is string && d.prize.size() >= 3 && d.prize.size() <= 90
+    && d.description is string && d.description.size() <= 280
+    && d.image is string && d.image.size() < 450000
+    && d.price is int && d.price >= 100 && d.price <= 100000000
+    && d.total is int && d.total >= 10 && d.total <= 1000
+    && d.drawAt is timestamp && d.automatic is bool
+    && d.phase in ['open','drawing','finished'] && d.updatedAt == request.time;
+  }
+  match /raffles/current {
+   allow read: if true;
+   allow create: if admin() && validRaffle(request.resource.data)
+    && request.resource.data.phase == 'open' && request.resource.data.winner == null
+    && request.resource.data.drawAt > request.time;
+   allow update: if admin() && validRaffle(request.resource.data) && resource.data.phase != 'finished'
+    && (
+     (resource.data.phase == 'open' && request.resource.data.phase == 'open'
+      && request.resource.data.winner == null && request.resource.data.drawAt > request.time
+      && request.resource.data.price == resource.data.price && request.resource.data.total == resource.data.total)
+     || (resource.data.phase == 'open' && request.time >= resource.data.drawAt
+      && request.resource.data.phase == 'drawing' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['phase','updatedAt']))
+     || (resource.data.phase == 'drawing' && request.resource.data.phase == 'finished'
+      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['phase','winner','updatedAt'])
+      && request.resource.data.winner.keys().hasOnly(['number','drawnAt','participants'])
+      && request.resource.data.winner.drawnAt == request.time
+      && request.resource.data.winner.participants is int && request.resource.data.winner.participants > 0
+      && get(/databases/$(database)/documents/tickets/$(string(request.resource.data.winner.number))).data.status == 'paid')
+    );
+  }
+  match /sellers/{uid} {
+   allow read: if admin() || (request.auth != null && request.auth.uid == uid);
+   allow create, update: if admin()
+    && request.resource.data.keys().hasOnly(['name','email','active','createdAt'])
+    && request.resource.data.name is string && request.resource.data.name.size() >= 3 && request.resource.data.name.size() <= 80
+    && request.resource.data.email is string && request.resource.data.email.size() <= 254
+    && request.resource.data.active is bool && request.resource.data.createdAt is timestamp;
+  }
+  match /sellerLinks/{uid} {
+   allow read: if true;
+   allow create, update: if admin()
+    && request.resource.data.keys().hasOnly(['name','active'])
+    && request.resource.data.name == getAfter(/databases/$(database)/documents/sellers/$(uid)).data.name
+    && request.resource.data.active == getAfter(/databases/$(database)/documents/sellers/$(uid)).data.active;
+  }
+  match /tickets/{id} {
+   allow read: if true;
+   allow create: if request.auth != null && open() && validTicket(request.resource.data)
+    && id == string(request.resource.data.number) && saleMatches(id,request.resource.data)
+    && (admin() || activeSeller(request.resource.data.sellerId));
+   allow update: if open() && (admin() || seller(resource.data.sellerId))
+    && validTicket(request.resource.data) && saleMatches(id,request.resource.data)
+    && request.resource.data.number == resource.data.number && request.resource.data.sellerId == resource.data.sellerId;
+   allow delete: if open() && (admin() || seller(resource.data.sellerId))
+    && !existsAfter(/databases/$(database)/documents/sales/$(id));
+  }
+  match /sales/{id} {
+   allow read: if admin() || (request.auth != null &&
+    (seller(resource.data.sellerId) || resource.data.buyerUid == request.auth.uid));
+   allow create: if request.auth != null && open() && validSale(request.resource.data)
+    && id == string(request.resource.data.number) && pairMatches(id,request.resource.data)
+    && request.resource.data.createdAt == request.time
+    && (admin() || (activeSeller(request.resource.data.sellerId)
+      && ((request.resource.data.buyerUid == request.auth.uid && request.resource.data.status == 'reserved') || seller(request.resource.data.sellerId))));
+   allow update: if open() && (admin() || seller(resource.data.sellerId))
+    && validSale(request.resource.data) && pairMatches(id,request.resource.data)
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','phone','status','updatedAt']);
+   allow delete: if open() && (admin() || seller(resource.data.sellerId))
+    && !existsAfter(/databases/$(database)/documents/tickets/$(id));
+  }
+ }
+}
