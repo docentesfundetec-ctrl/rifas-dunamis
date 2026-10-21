@@ -2,7 +2,7 @@ import {test,before,after,beforeEach} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {initializeTestEnvironment,assertFails,assertSucceeds} from '@firebase/rules-unit-testing';
-import {doc,setDoc,getDoc,getDocs,collection,writeBatch,serverTimestamp,Timestamp,updateDoc,query,where} from 'firebase/firestore';
+import {doc,setDoc,getDoc,getDocs,collection,writeBatch,serverTimestamp,Timestamp,updateDoc,deleteDoc,query,where} from 'firebase/firestore';
 let env;
 const projectId='demo-rifas';
 const validConfig=()=>({title:'Rifa de prueba',prize:'Premio de prueba',description:'Prueba',image:'assets/premio.svg',price:10000,total:100,drawAt:Timestamp.fromMillis(Date.now()+86400000),automatic:false,phase:'open',winner:null,updatedAt:Timestamp.now()});
@@ -12,6 +12,20 @@ beforeEach(async()=>{await env.clearFirestore();await env.withSecurityRulesDisab
 const guest=id=>env.authenticatedContext(id,{firebase:{sign_in_provider:'anonymous'}}).firestore();
 const sellerDb=id=>env.authenticatedContext(id,{email:id+'@example.test',firebase:{sign_in_provider:'password'}}).firestore();
 const adminDb=()=>env.authenticatedContext('admin',{email:'docentesfundetec@gmail.com',email_verified:true,firebase:{sign_in_provider:'google.com'}}).firestore();
+test('La limpieza solo admite rifas de prueba y bloquea nuevas reservas durante su eliminación',async()=>{
+ const a=adminDb();
+ await assertFails(updateDoc(doc(a,'raffles/current'),{testMode:true,updatedAt:serverTimestamp()}));
+ await assertFails(updateDoc(doc(a,'raffles/current'),{phase:'resetting',updatedAt:serverTimestamp()}));
+ await assertFails(deleteDoc(doc(a,'raffles/current')));
+ await env.withSecurityRulesDisabled(async c=>updateDoc(doc(c.firestore(),'raffles/current'),{testMode:true}));
+ await assertFails(updateDoc(doc(a,'raffles/current'),{testMode:false,updatedAt:serverTimestamp()}));
+ await reserve(guest('buyer-a'));
+ await assertFails(updateDoc(doc(guest('buyer-a'),'raffles/current'),{phase:'resetting',updatedAt:serverTimestamp()}));
+ await assertSucceeds(updateDoc(doc(a,'raffles/current'),{phase:'resetting',updatedAt:serverTimestamp()}));
+ await assertFails(reserve(guest('buyer-b'),8,'reserved','buyer-b'));
+ const b=writeBatch(a);b.delete(doc(a,'sales/7'));b.delete(doc(a,'tickets/7'));await assertSucceeds(b.commit());
+ await assertSucceeds(deleteDoc(doc(a,'raffles/current')));
+});
 function reserve(db,n=7,status='reserved',owner='buyer-a',seller='seller-a'){const batch=writeBatch(db),t={number:n,status,sellerId:seller,updatedAt:serverTimestamp()};batch.set(doc(db,'tickets',String(n)),t);batch.set(doc(db,'sales',String(n)),{...t,buyerUid:owner,name:'Comprador Prueba',phone:'3000000000',createdAt:serverTimestamp()});return batch.commit();}
 test('Público ve números pero no compradores, celulares ni correos de vendedores',async()=>{await assertSucceeds(reserve(guest('buyer-a')));const db=env.unauthenticatedContext().firestore();await assertSucceeds(getDocs(collection(db,'tickets')));await assertFails(getDoc(doc(db,'sales/7')));await assertFails(getDocs(collection(db,'sellers')));await assertSucceeds(getDoc(doc(db,'sellerLinks/seller-a')));});
 test('Cliente reserva, pero no puede marcar pagado ni suplantar otro comprador',async()=>{await assertFails(reserve(guest('buyer-a'),7,'paid'));await assertFails(reserve(guest('buyer-a'),7,'reserved','buyer-b'));await assertSucceeds(reserve(guest('buyer-a')));await assertFails(updateDoc(doc(guest('buyer-a'),'sales/7'),{status:'paid',updatedAt:serverTimestamp()}));await assertSucceeds(getDoc(doc(guest('buyer-a'),'sales/7')));});

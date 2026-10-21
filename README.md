@@ -40,3 +40,8 @@ src/firebase-config.js contiene configuración pública de la app, no claves pri
 npm test verifica las reglas de negocio. npm run test:rules ejecuta el emulador de Firestore y requiere Java 21 o posterior. Usa demo-rifas, sin tocar compradores reales. Cubre privacidad, roles, reservas simultáneas, consistencia atómica, cierre y resultado único.
 
 Fuentes: [Transacciones](https://firebase.google.com/docs/firestore/manage-data/transactions), [Reglas](https://firebase.google.com/docs/firestore/security/get-started), [Google Sign-In](https://firebase.google.com/docs/auth/web/google-signin).
+
+## Rifa de prueba
+El botón «Crear rifa de prueba» crea 100 números, valor ilustrativo de $1.000 COP y fecha a 15 días. La franja pública indica que no se reciben pagos. Incluye un enlace de vendedor ficticio sin cuenta de acceso. Solo deben usarse datos inventados.
+
+«Limpiar prueba» bloquea nuevas reservas, elimina los registros de la demostración y permite configurar la primera rifa real. Esta opción está protegida en las reglas y no funciona sobre una rifa real. Los vendedores reales se conservan.

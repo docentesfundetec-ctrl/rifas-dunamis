@@ -14,7 +14,7 @@ function merged(){data.tickets=Object.fromEntries(Object.entries(publicTickets).
 function watchError(e){data.error=message(e);notify();}
 function watchPrivate(q,cb){privateUnsubs.push(onSnapshot(q,cb,watchError));}
 export function start(cb,linkId){notify=cb;
- onSnapshot(raffleRef,snap=>{data.loaded=true;if(snap.exists()){const r=snap.data();data.settings={...r,drawAt:r.drawAt.toDate().toISOString()};data.phase=r.phase;data.winner=r.winner?{...r.winner,drawnAt:r.winner.drawnAt.toDate().toISOString(),eligible:Array(r.winner.participants).fill(0)}:null;}else data.settings=null;notify();},watchError);
+ onSnapshot(raffleRef,snap=>{data.loaded=true;if(snap.exists()){const r=snap.data();data.settings={...r,drawAt:r.drawAt.toDate().toISOString()};data.phase=r.phase;data.winner=r.winner?{...r.winner,drawnAt:r.winner.drawnAt.toDate().toISOString(),eligible:Array(r.winner.participants).fill(0)}:null;}else {data.settings=null;data.winner=null;data.phase="open";}notify();},watchError);
  onSnapshot(collection(db,'tickets'),snap=>{publicTickets=Object.fromEntries(snap.docs.map(d=>[d.id,d.data()]));merged();},watchError);
  if(linkId)onSnapshot(ref('sellerLinks',linkId),snap=>{data.link=snap.exists()?{id:snap.id,...snap.data()}:null;notify();},watchError);
  onAuthStateChanged(auth,async user=>{const epoch=++generation;privateUnsubs.forEach(u=>u());privateUnsubs=[];privateSales={};data.sellers=[];session.user=user;session.role='guest';session.profile=null;session.ready=false;merged();
@@ -44,9 +44,28 @@ export async function addSeller({name,email,password,existing=false}){
 export async function toggleSeller(s){if(session.role!=='admin')throw Error('Acceso exclusivo del administrador.');const batch=writeBatch(db);batch.update(ref('sellers',s.id),{active:!s.active});batch.update(ref('sellerLinks',s.id),{active:!s.active});await batch.commit();}
 export async function saveSettings(settings){if(session.role!=='admin')throw Error('Acceso exclusivo del administrador.');
  await runTransaction(db,async tx=>{const snap=await tx.get(raffleRef);if(snap.exists()&&snap.data().phase!=='open')throw Error('La rifa ya está cerrada para cambios.');if(snap.exists()&&(settings.total!==snap.data().total||settings.price!==snap.data().price))throw Error('El precio y la cantidad se fijan al crear la rifa.');
- tx.set(raffleRef,{...settings,phase:'open',winner:null,drawAt:Timestamp.fromDate(new Date(settings.drawAt)),updatedAt:serverTimestamp()});});
+ tx.set(raffleRef,{...settings,testMode:snap.exists()?!!snap.data().testMode:false,phase:'open',winner:null,drawAt:Timestamp.fromDate(new Date(settings.drawAt)),updatedAt:serverTimestamp()});});
 }
 export function defaults(){return freshState().settings;}
+export async function createTestRaffle(){
+ if(session.role!=='admin')throw Error('Acceso exclusivo del administrador.');
+ await runTransaction(db,async tx=>{
+  if((await tx.get(raffleRef)).exists())throw Error('Ya existe una rifa.');
+  tx.set(raffleRef,{...defaults(),title:'Rifa de prueba Dunamis',prize:'Premio de demostración',description:'Demostración del sistema. No se reciben pagos ni se entrega un premio real.',price:1000,total:100,testMode:true,automatic:false,phase:'open',winner:null,drawAt:Timestamp.fromMillis(Date.now()+15*86400000),updatedAt:serverTimestamp()});
+ });
+ const batch=writeBatch(db);
+ batch.set(ref('sellers','demo-seller'),{name:'Vendedor de prueba (sin acceso)',email:'prueba@example.invalid',active:true,createdAt:serverTimestamp()});
+ batch.set(ref('sellerLinks','demo-seller'),{name:'Vendedor de prueba (sin acceso)',active:true});
+ await batch.commit();
+}
+export async function removeTestRaffle(){
+ if(session.role!=='admin'||!data.settings?.testMode)throw Error('Solo se puede limpiar una rifa de prueba.');
+ await runTransaction(db,async tx=>{const snap=await tx.get(raffleRef);if(!snap.data()?.testMode)throw Error('Esta rifa no es de prueba.');tx.update(raffleRef,{phase:'resetting',updatedAt:serverTimestamp()});});
+ const all=await getDocs(collection(db,'tickets'));
+ for(let start=0;start<all.docs.length;start+=5){const batch=writeBatch(db);for(const ticket of all.docs.slice(start,start+5)){batch.delete(ticket.ref);batch.delete(ref('sales',ticket.id));}await batch.commit();}
+ const batch=writeBatch(db);batch.delete(ref('sellers','demo-seller'));batch.delete(ref('sellerLinks','demo-seller'));await batch.commit();
+ await runTransaction(db,async tx=>{await tx.get(raffleRef);tx.delete(raffleRef);});
+}
 export async function reserve({number,sellerId,name,phone}){
  validateBuyer(name,phone);if(!auth.currentUser)await signInAnonymously(auth);const uid=auth.currentUser.uid;
  await runTransaction(db,async tx=>{const [raffle,ticket,link]=await Promise.all([tx.get(raffleRef),tx.get(ref('tickets',number)),tx.get(ref('sellerLinks',sellerId))]);

@@ -11,6 +11,10 @@ service cloud.firestore {
     && get(/databases/$(database)/documents/sellers/$(id)).data.active == true;
   }
   function activeSeller(id) { return get(/databases/$(database)/documents/sellers/$(id)).data.active == true; }
+  function resettingTest() {
+   let r = get(/databases/$(database)/documents/raffles/current).data;
+   return admin() && r.get('testMode', false) == true && r.phase == 'resetting';
+  }
   function open() {
    let r = get(/databases/$(database)/documents/raffles/current).data;
    return r.phase == 'open' && request.time < r.drawAt;
@@ -40,7 +44,8 @@ service cloud.firestore {
    return s.number == d.number && s.status == d.status && s.sellerId == d.sellerId;
   }
   function validRaffle(d) {
-   return d.keys().hasOnly(['title','prize','description','image','price','total','drawAt','automatic','phase','winner','updatedAt'])
+   return d.keys().hasOnly(['title','prize','description','image','price','total','drawAt','automatic','phase','winner','updatedAt','testMode'])
+    && d.get('testMode', false) is bool
     && d.title is string && d.title.size() >= 3 && d.title.size() <= 85
     && d.prize is string && d.prize.size() >= 3 && d.prize.size() <= 90
     && d.description is string && d.description.size() <= 280
@@ -48,7 +53,7 @@ service cloud.firestore {
     && d.price is int && d.price >= 100 && d.price <= 100000000
     && d.total is int && d.total >= 10 && d.total <= 1000
     && d.drawAt is timestamp && d.automatic is bool
-    && d.phase in ['open','drawing','finished'] && d.updatedAt == request.time;
+    && d.phase in ['open','drawing','finished','resetting'] && d.updatedAt == request.time;
   }
   match /raffles/current {
    allow read: if true;
@@ -56,6 +61,7 @@ service cloud.firestore {
     && request.resource.data.phase == 'open' && request.resource.data.winner == null
     && request.resource.data.drawAt > request.time;
    allow update: if admin() && validRaffle(request.resource.data) && resource.data.phase != 'finished'
+    && request.resource.data.get('testMode', false) == resource.data.get('testMode', false)
     && (
      (resource.data.phase == 'open' && request.resource.data.phase == 'open'
       && request.resource.data.winner == null && request.resource.data.drawAt > request.time
@@ -69,8 +75,13 @@ service cloud.firestore {
       && request.resource.data.winner.participants is int && request.resource.data.winner.participants > 0
       && get(/databases/$(database)/documents/tickets/$(string(request.resource.data.winner.number))).data.status == 'paid')
     );
+   allow update: if admin() && resource.data.get('testMode', false) == true
+    && request.resource.data.phase == 'resetting' && request.resource.data.updatedAt == request.time
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['phase','updatedAt']);
+   allow delete: if resettingTest();
   }
   match /sellers/{uid} {
+   allow delete: if uid == 'demo-seller' && resettingTest();
    allow read: if admin() || (request.auth != null && request.auth.uid == uid);
    allow create, update: if admin()
     && request.resource.data.keys().hasOnly(['name','email','active','createdAt'])
@@ -79,6 +90,7 @@ service cloud.firestore {
     && request.resource.data.active is bool && request.resource.data.createdAt is timestamp;
   }
   match /sellerLinks/{uid} {
+   allow delete: if uid == 'demo-seller' && resettingTest();
    allow read: if true;
    allow create, update: if admin()
     && request.resource.data.keys().hasOnly(['name','active'])
@@ -93,7 +105,7 @@ service cloud.firestore {
    allow update: if open() && (admin() || seller(resource.data.sellerId))
     && validTicket(request.resource.data) && saleMatches(id,request.resource.data)
     && request.resource.data.number == resource.data.number && request.resource.data.sellerId == resource.data.sellerId;
-   allow delete: if open() && (admin() || seller(resource.data.sellerId))
+   allow delete: if (resettingTest() || (open() && (admin() || seller(resource.data.sellerId))))
     && !existsAfter(/databases/$(database)/documents/sales/$(id));
   }
   match /sales/{id} {
@@ -107,7 +119,7 @@ service cloud.firestore {
    allow update: if open() && (admin() || seller(resource.data.sellerId))
     && validSale(request.resource.data) && pairMatches(id,request.resource.data)
     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','phone','status','updatedAt']);
-   allow delete: if open() && (admin() || seller(resource.data.sellerId))
+   allow delete: if (resettingTest() || (open() && (admin() || seller(resource.data.sellerId))))
     && !existsAfter(/databases/$(database)/documents/tickets/$(id));
   }
  }
